@@ -72,9 +72,12 @@ function findBoardQuad(cv, src) {
 
     let pts;
     if (approx.rows === 4 && cv.isContourConvex(approx)) {
+      // approx is a [4,1] Mat with 2 int32 channels per point (x, y); read
+      // via the flat typed-array view rather than a (row, col) accessor,
+      // since there's only ever 1 "column" here.
       pts = [];
       for (let r = 0; r < 4; r++) {
-        pts.push([approx.intAt(r, 0), approx.intAt(r, 1)]);
+        pts.push([approx.data32S[r * 2], approx.data32S[r * 2 + 1]]);
       }
     } else {
       const rect = cv.minAreaRect(cnt);

@@ -23,3 +23,6 @@ models/*.mlmodelc
 .vscode/
 .idea/
 *.swp
+
+# Claude Code
+.claude/

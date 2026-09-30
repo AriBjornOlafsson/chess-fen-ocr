@@ -1,19 +1,18 @@
-"""Synthetic training data: render randomized boards with python-chess's
-bundled SVG piece set (fully offline) and slice them into labeled squares.
+"""Synthetic training data: render randomized boards using a variety of
+freely-licensed piece sets (see assets/pieces/, fully offline once fetched)
+and slice them into labeled squares.
 """
 from __future__ import annotations
 
-import io
 import random
 
-import cairosvg
 import chess
-import chess.svg
 import cv2
 import numpy as np
-from PIL import Image
 
+from .board_render import render_board_custom
 from .labels import CLASS_TO_IDX
+from .piece_assets import available_piece_sets
 
 SQUARE_PX = 64  # model input size per square
 
@@ -26,15 +25,20 @@ THEMES = [
     ("#e8ebef", "#7d87a3"),  # blue
     ("#f4f4f4", "#9f9f9f"),  # gray
     ("#eeeeee", "#b48fca"),  # purple
+    ("#ffffff", "#999999"),  # flat gray/white, e.g. En Croissant-style apps
+    ("#f5deb0", "#6b6b6b"),
 ]
 
-
-def _rand_hex() -> str:
-    return "#%02x%02x%02x" % (
-        random.randint(0, 255),
-        random.randint(0, 255),
-        random.randint(0, 255),
+PIECE_SETS = available_piece_sets()
+if not PIECE_SETS:
+    raise RuntimeError(
+        "No piece sets found under assets/pieces/. Fetch at least one set "
+        "(e.g. cburnett) before generating training data."
     )
+
+
+def _rand_bgr() -> tuple[int, int, int]:
+    return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
 
 
 def random_board(min_pieces: int = 6, max_pieces: int = 30) -> chess.Board:
@@ -72,9 +76,10 @@ def render_board_png(
     with_lastmove: bool,
 ) -> np.ndarray:
     light, dark = random.choice(THEMES)
-    colors = {"square light": light, "square dark": dark}
+    piece_set = random.choice(PIECE_SETS)
 
     lastmove = None
+    hl_light = hl_dark = None
     if with_lastmove:
         occupied = [s for s in chess.SQUARES if board.piece_at(s)]
         empties = [s for s in chess.SQUARES if not board.piece_at(s)]
@@ -82,21 +87,23 @@ def render_board_png(
             frm = random.choice(occupied)
             to = random.choice(empties)
             lastmove = chess.Move(frm, to)
-            hl_light = _rand_hex() + "99"
-            hl_dark = _rand_hex() + "99"
-            colors["square light lastmove"] = hl_light
-            colors["square dark lastmove"] = hl_dark
+            alpha = random.uniform(0.3, 0.65)
+            hl_light = (_rand_bgr(), alpha)
+            hl_dark = (_rand_bgr(), alpha)
 
-    svg_data = chess.svg.board(
+    show_coords = random.random() < 0.3
+
+    return render_board_custom(
         board,
         size=size,
-        coordinates=False,
+        piece_set=piece_set,
+        light_hex=light,
+        dark_hex=dark,
         lastmove=lastmove,
-        colors=colors,
+        hl_light=hl_light,
+        hl_dark=hl_dark,
+        show_coords=show_coords,
     )
-    png_bytes = cairosvg.svg2png(bytestring=svg_data.encode("utf-8"))
-    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-    return np.array(img)[:, :, ::-1]  # RGB -> BGR to match cv2 convention
 
 
 def _augment(square_bgr: np.ndarray) -> np.ndarray:
@@ -181,7 +188,7 @@ def generate_dataset(
 
     for i in range(num_boards):
         board = random_board()
-        size = random.choice([320, 400, 512, 640])
+        size = random.choice([320, 400, 512, 640, 720, 800])
         with_lastmove = random.random() < 0.7
         img = render_board_png(board, size=size, with_lastmove=with_lastmove)
         samples, labels = board_to_samples(board, img, augment=augment)

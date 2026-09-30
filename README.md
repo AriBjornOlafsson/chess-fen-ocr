@@ -41,6 +41,7 @@ installed via Homebrew: `brew install cairo`.
 ## Train the model
 
 ```bash
+source venv/bin/activate
 python -m chess_fen_ocr.train --boards 900 --epochs 14
 ```
 
@@ -52,11 +53,32 @@ runs on the ANE at inference time.
 ## Run it on a screenshot
 
 ```bash
+source venv/bin/activate
 python -m chess_fen_ocr.cli path/to/screenshot.png
 # rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1
 ```
 
 Use `--flipped` if the screenshot is from Black's point of view (rank 1 at the top).
+
+## Web wrapper
+
+```bash
+./run.sh
+```
+
+or manually:
+
+```bash
+source venv/bin/activate
+python -m chess_fen_ocr.web
+open http://127.0.0.1:5000
+```
+
+Drag and drop (or paste) a screenshot in the browser, pick side-to-move and
+orientation, and it returns the FEN, a lichess analysis link, and an annotated
+debug preview showing exactly what was predicted on each square. Runs entirely
+locally; the Core ML model is loaded once at startup and reused across
+requests.
 
 ## Validate against a known position
 
@@ -65,6 +87,7 @@ you can round-trip a known position through the whole pipeline and check the out
 FEN matches:
 
 ```bash
+source venv/bin/activate
 python scripts/make_test_image.py "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R" \
     --lastmove g1f3 --out /tmp/test_board.png
 python -m chess_fen_ocr.cli /tmp/test_board.png

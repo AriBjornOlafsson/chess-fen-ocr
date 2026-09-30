@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chess-fen-ocr</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #1c1c1e;
+    background: #fafafa;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #eee; background: #161616; }
+    .drop-zone { border-color: #444 !important; background: #1e1e1e !important; }
+    .fen-box { background: #222 !important; color: #eee !important; }
+    select { background: #222; color: #eee; }
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.sub { color: #888; margin-top: 0; font-size: 0.9rem; }
+  .drop-zone {
+    border: 2px dashed #bbb;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    color: #888;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop-zone.dragover { border-color: #4a90d9; background: #eef5fc; }
+  .drop-zone img { max-width: 100%; max-height: 260px; border-radius: 8px; margin-top: 12px; }
+  .controls { display: flex; gap: 16px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+  .controls label { font-size: 0.9rem; }
+  button {
+    background: #4a90d9; color: white; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 0.95rem; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .fen-box {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #fff; border-radius: 8px; padding: 14px 16px;
+    font-size: 0.95rem; word-break: break-all; margin-top: 8px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row button { padding: 6px 12px; font-size: 0.85rem; }
+  #result { display: none; margin-top: 24px; }
+  #preview-annotated { max-width: 100%; border-radius: 8px; margin-top: 10px; }
+  .error { color: #d9534f; margin-top: 12px; }
+  a { color: #4a90d9; }
+</style>
+</head>
+<body>
+  <h1>chess-fen-ocr</h1>
+  <p class="sub">Drop a chessboard screenshot to get its FEN. Runs locally via Core ML on the Neural Engine.</p>
+
+  <div class="drop-zone" id="dropZone" tabindex="0">
+    <div id="dropPrompt">Drop an image here, paste one, or click to choose one</div>
+    <img id="previewImg" style="display:none">
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+  </div>
+
+  <div class="controls">
+    <label>Side to move:
+      <select id="activeColor">
+        <option value="" selected>Auto-detect (from last-move highlight)</option>
+        <option value="w">White</option>
+        <option value="b">Black</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="flipped"> Board is flipped (Black at top)</label>
+    <button id="submitBtn" disabled>Get FEN</button>
+  </div>
+
+  <div id="error" class="error"></div>
+
+  <div id="result">
+    <div class="row">
+      <div class="fen-box" id="fenText"></div>
+      <button id="copyBtn">Copy</button>
+    </div>
+    <p><a id="lichessLink" href="#" target="_blank" rel="noopener">Open in lichess analysis &rarr;</a></p>
+    <p class="sub" id="colorNote"></p>
+    <p class="sub">Detected board &amp; predictions (yellow border = detected last-move highlight):</p>
+    <img id="preview-annotated">
+  </div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const dropPrompt = document.getElementById('dropPrompt');
+const fileInput = document.getElementById('fileInput');
+const previewImg = document.getElementById('previewImg');
+const submitBtn = document.getElementById('submitBtn');
+const errorDiv = document.getElementById('error');
+const resultDiv = document.getElementById('result');
+
+let currentFile = null;
+
+function setFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  currentFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    previewImg.src = e.target.result;
+    previewImg.style.display = 'block';
+    dropPrompt.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+  submitBtn.disabled = false;
+  errorDiv.textContent = '';
+  resultDiv.style.display = 'none';
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+
+['dragenter', 'dragover'].forEach(evt =>
+  dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('dragover'); })
+);
+['dragleave', 'drop'].forEach(evt =>
+  dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('dragover'); })
+);
+dropZone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+document.addEventListener('paste', e => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  const item = [...items].find(i => i.type.startsWith('image/'));
+  if (item) {
+    e.preventDefault();
+    setFile(item.getAsFile());
+  }
+});
+
+submitBtn.addEventListener('click', async () => {
+  if (!currentFile) return;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Working...';
+  errorDiv.textContent = '';
+  resultDiv.style.display = 'none';
+
+  const form = new FormData();
+  form.append('image', currentFile);
+  form.append('active_color', document.getElementById('activeColor').value);
+  form.append('flipped', document.getElementById('flipped').checked);
+
+  try {
+    const resp = await fetch('/api/fen', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Request failed');
+
+    document.getElementById('fenText').textContent = data.fen;
+    document.getElementById('lichessLink').href = data.lichess_url;
+    document.getElementById('preview-annotated').src = 'data:image/png;base64,' + data.preview_png_b64;
+
+    const sideName = data.active_color === 'b' ? 'Black' : 'White';
+    const sourceText = {
+      highlight: 'auto-detected from the last-move highlight',
+      manual: 'set manually',
+      default: 'no highlight detected, defaulted',
+    }[data.active_color_source] || '';
+    document.getElementById('colorNote').textContent = `${sideName} to move (${sourceText})`;
+
+    resultDiv.style.display = 'block';
+  } catch (err) {
+    errorDiv.textContent = err.message;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Get FEN';
+  }
+});
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('fenText').textContent);
+});
+</script>
+</body>
+</html>

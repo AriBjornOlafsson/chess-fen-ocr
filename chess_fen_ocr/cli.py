@@ -10,31 +10,21 @@ import sys
 
 import cv2
 
-from .board_detect import detect_and_warp
 from .classify import SquareClassifier
-from .fen import grid_to_fen
-from .segment import split_squares
+from .pipeline import OcrResult, image_bgr_to_result
 
 
-def image_to_fen(
+def image_to_result(
     image_path: str,
-    active_color: str = "w",
+    active_color: str | None = None,
     flipped: bool = False,
-) -> str:
+) -> OcrResult:
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError(f"Could not read image: {image_path}")
 
-    board_img = detect_and_warp(image)
-    grid = split_squares(board_img)
-
     classifier = SquareClassifier()
-    labels = classifier.predict_grid(grid)
-
-    if flipped:
-        labels = [list(reversed(row)) for row in reversed(labels)]
-
-    return grid_to_fen(labels, active_color=active_color)
+    return image_bgr_to_result(image, classifier, active_color=active_color, flipped=flipped)
 
 
 def main() -> None:
@@ -43,8 +33,12 @@ def main() -> None:
     parser.add_argument(
         "--active-color",
         choices=["w", "b"],
-        default="w",
-        help="Side to move (not visually determinable; defaults to 'w')",
+        default=None,
+        help=(
+            "Side to move. By default this is auto-detected from the last-move "
+            "highlight (the highlighted destination square's piece color tells us "
+            "who just moved); pass this to override."
+        ),
     )
     parser.add_argument(
         "--flipped",
@@ -53,8 +47,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    fen = image_to_fen(args.image, active_color=args.active_color, flipped=args.flipped)
-    print(fen)
+    result = image_to_result(args.image, active_color=args.active_color, flipped=args.flipped)
+
+    if result.active_color_source == "highlight":
+        note = f"active color auto-detected from last-move highlight: {result.active_color}"
+    elif result.active_color_source == "default":
+        note = "no last-move highlight detected; defaulted active color to 'w'"
+    else:
+        note = f"active color set explicitly: {result.active_color}"
+    print(note, file=sys.stderr)
+
+    print(result.fen)
 
 
 if __name__ == "__main__":

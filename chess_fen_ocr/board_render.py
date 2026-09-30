@@ -33,6 +33,33 @@ def _alpha_paste(canvas_bgr: np.ndarray, rgba: np.ndarray, x0: int, y0: int) -> 
     canvas_bgr[y0 : y0 + h, x0 : x0 + w] = blended.astype(np.uint8)
 
 
+def _add_square_texture(canvas: np.ndarray, x0: int, y0: int, cell: int) -> None:
+    """Overlay a subtle random gradient + noise texture onto one square's
+    background so the classifier can't shortcut "empty" as "perfectly
+    uniform flat color" -- real boards (wood grain, gradients, lighting)
+    rarely render a square as one exact solid color, and the synthetic
+    THEMES above are otherwise always flat."""
+    if random.random() < 0.35:
+        return
+
+    region = canvas[y0 : y0 + cell, x0 : x0 + cell].astype(np.float32)
+    h, w = region.shape[:2]
+    if h == 0 or w == 0:
+        return
+
+    angle = random.uniform(0, 2 * np.pi)
+    gx, gy = np.cos(angle), np.sin(angle)
+    xs, ys = np.meshgrid(np.linspace(-1, 1, w), np.linspace(-1, 1, h))
+    gradient = xs * gx + ys * gy
+    gradient = gradient / (np.abs(gradient).max() + 1e-6)
+    region += gradient[..., None] * random.uniform(5, 25)
+
+    if random.random() < 0.7:
+        region += np.random.normal(0, random.uniform(2, 10), region.shape)
+
+    canvas[y0 : y0 + cell, x0 : x0 + cell] = np.clip(region, 0, 255).astype(np.uint8)
+
+
 def render_board_custom(
     board: chess.Board,
     size: int,
@@ -68,6 +95,7 @@ def render_board_custom(
                     color = tuple(int(b * (1 - alpha) + h * alpha) for b, h in zip(base, hl_bgr))
 
             canvas[y0 : y0 + cell, x0 : x0 + cell] = color
+            _add_square_texture(canvas, x0, y0, cell)
 
     if show_coords:
         files = "abcdefgh"

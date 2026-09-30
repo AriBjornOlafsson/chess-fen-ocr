@@ -29,7 +29,7 @@ def main() -> None:
     model.load_state_dict(torch.load(weights_path, map_location="cpu"))
     model.eval()
 
-    example = torch.rand(1, 3, 64, 64)
+    example = torch.rand(1, 4, 64, 64)
 
     torch.onnx.export(
         model,

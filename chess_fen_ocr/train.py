@@ -23,8 +23,8 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 def to_tensor_xy(x: np.ndarray, y: np.ndarray) -> TensorDataset:
-    # BGR uint8 HWC -> normalized float32 CHW
-    xt = torch.from_numpy(x).permute(0, 3, 1, 2).float() / 255.0
+    # x is already (N, 4, SQUARE_PX, SQUARE_PX) float32 from preprocess.py
+    xt = torch.from_numpy(x)
     yt = torch.from_numpy(y)
     return TensorDataset(xt, yt)
 
@@ -84,7 +84,7 @@ def train(num_boards: int, epochs: int, batch_size: int, lr: float) -> SquareNet
 
 def export_coreml(model: SquareNet, out_path: Path) -> None:
     model = model.to("cpu").eval()
-    example = torch.rand(1, 3, 64, 64)
+    example = torch.rand(1, 4, 64, 64)
     traced = torch.jit.trace(model, example)
 
     mlmodel = ct.convert(

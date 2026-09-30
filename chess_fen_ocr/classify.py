@@ -5,7 +5,8 @@ from pathlib import Path
 
 import coremltools as ct
 import numpy as np
-from PIL import Image
+
+from .preprocess import square_bgr_to_tensor
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DEFAULT_MODEL_PATH = MODELS_DIR / "SquareClassifier.mlpackage"
@@ -22,9 +23,7 @@ class SquareClassifier:
         self.model = ct.models.MLModel(str(model_path), compute_units=ct.ComputeUnit.ALL)
 
     def predict_square(self, square_bgr: np.ndarray) -> tuple[str, float]:
-        rgb = square_bgr[:, :, ::-1]
-        img = Image.fromarray(rgb)
-        arr = (np.array(img).astype(np.float32) / 255.0).transpose(2, 0, 1)[None, ...]
+        arr = square_bgr_to_tensor(square_bgr)[None, ...]
         out = self.model.predict({"square": arr})
         label = out["classLabel"]
         class_probs = out["classLabel_probs"]

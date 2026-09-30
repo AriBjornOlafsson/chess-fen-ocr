@@ -13,6 +13,7 @@ import numpy as np
 from .board_render import render_board_custom
 from .labels import CLASS_TO_IDX
 from .piece_assets import available_piece_sets
+from .preprocess import square_bgr_to_tensor
 
 SQUARE_PX = 64  # model input size per square
 
@@ -170,7 +171,7 @@ def board_to_samples(
             piece = board.piece_at(square)
             label = CLASS_TO_IDX[piece.symbol() if piece else "empty"]
 
-            samples.append(crop)
+            samples.append(square_bgr_to_tensor(crop))
             labels.append(label)
 
     return samples, labels
@@ -195,6 +196,6 @@ def generate_dataset(
         all_x.extend(samples)
         all_y.extend(labels)
 
-    x = np.stack(all_x).astype(np.uint8)
+    x = np.stack(all_x).astype(np.float32)  # (N, 4, SQUARE_PX, SQUARE_PX)
     y = np.array(all_y, dtype=np.int64)
     return x, y

@@ -1,0 +1,7 @@
+opencv-python-headless
+numpy
+pillow
+python-chess
+cairosvg
+torch
+coremltools

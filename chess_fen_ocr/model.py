@@ -1,5 +1,6 @@
-"""Small CNN for classifying a single chessboard square (64x64 RGB+edge ->
-13 classes). See preprocess.py for the 4th (Sobel edge-magnitude) channel."""
+"""Small CNN for classifying a single chessboard square (64x64 grayscale+edge
+-> 13 classes). See preprocess.py for the channel definitions; color is
+deliberately not fed in, so classification is invariant to board theme/hue."""
 from __future__ import annotations
 
 import torch
@@ -7,7 +8,7 @@ from torch import nn
 
 from .labels import NUM_CLASSES
 
-IN_CHANNELS = 4
+IN_CHANNELS = 2
 
 
 class SquareNet(nn.Module):

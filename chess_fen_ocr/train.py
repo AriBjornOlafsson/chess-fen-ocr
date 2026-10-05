@@ -84,7 +84,7 @@ def train(num_boards: int, epochs: int, batch_size: int, lr: float) -> SquareNet
 
 def export_coreml(model: SquareNet, out_path: Path) -> None:
     model = model.to("cpu").eval()
-    example = torch.rand(1, 4, 64, 64)
+    example = torch.rand(1, 2, 64, 64)
     traced = torch.jit.trace(model, example)
 
     mlmodel = ct.convert(

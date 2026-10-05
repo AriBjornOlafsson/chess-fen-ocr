@@ -19,11 +19,21 @@ ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "pieces"
 
 PIECE_CODES = ["P", "N", "B", "R", "Q", "K"]
 
+# Sets excluded from training: the classifier is trained on grayscale (no
+# color channel, see preprocess.py), so a set must distinguish white from
+# black by luminance alone. "firi" renders white pieces as mid-gray (~92,92,92)
+# and black pieces as dark gold (~88,72,10) -- a gray-vs-gold theme, not
+# black-vs-white -- so the two are nearly indistinguishable once color is
+# dropped (luminance gap of just ~0.09 on a 0-1 scale).
+EXCLUDED_SETS = {"firi"}
+
 
 def available_piece_sets() -> list[str]:
     if not ASSETS_DIR.is_dir():
         return []
-    return sorted(p.name for p in ASSETS_DIR.iterdir() if p.is_dir())
+    return sorted(
+        p.name for p in ASSETS_DIR.iterdir() if p.is_dir() and p.name not in EXCLUDED_SETS
+    )
 
 
 @lru_cache(maxsize=None)

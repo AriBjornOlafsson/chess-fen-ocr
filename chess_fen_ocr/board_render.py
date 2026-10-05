@@ -33,13 +33,40 @@ def _alpha_paste(canvas_bgr: np.ndarray, rgba: np.ndarray, x0: int, y0: int) -> 
     canvas_bgr[y0 : y0 + h, x0 : x0 + w] = blended.astype(np.uint8)
 
 
-def _add_square_texture(canvas: np.ndarray, x0: int, y0: int, cell: int) -> None:
-    """Overlay a subtle random gradient + noise texture onto one square's
-    background so the classifier can't shortcut "empty" as "perfectly
-    uniform flat color" -- real boards (wood grain, gradients, lighting)
+def _make_board_texture_params(size: int) -> dict | None:
+    """Pick one set of wood-grain-like texture parameters for an entire
+    board render (grain direction/frequency/phase must be shared across all
+    64 squares -- real wood grain flows continuously across a board, it
+    doesn't reset at square boundaries)."""
+    if random.random() < 0.15:
+        return None  # keep some boards flat, so "perfectly uniform" stays in-distribution too
+    return {
+        "angle": random.uniform(0, 2 * np.pi),
+        "freq": random.uniform(6, 40) / size,  # grain stripes per pixel
+        "phase": random.uniform(0, 2 * np.pi),
+        "grain_amp": random.uniform(6, 30),
+        "gradient_amp": random.uniform(5, 20),
+        "fine_noise_amp": random.uniform(0, 6),
+    }
+
+
+def _add_square_texture(
+    canvas: np.ndarray, x0: int, y0: int, cell: int, params: dict | None
+) -> None:
+    """Overlay a shared-across-the-board gradient + periodic grain texture
+    onto one square's background, so the classifier can't shortcut "empty"
+    as "perfectly uniform flat color" -- real boards (wood grain, lighting)
     rarely render a square as one exact solid color, and the synthetic
-    THEMES above are otherwise always flat."""
-    if random.random() < 0.35:
+    THEMES above are otherwise always flat.
+
+    The grain is a genuine periodic stripe pattern (modulated by smoothed
+    noise for natural irregularity), not plain per-pixel noise: a real
+    wood-grain board produces a persistent, spread-out edge signal across
+    an entire empty square, which plain Gaussian noise doesn't reproduce,
+    and the model needs to see that exact failure mode during training to
+    not mistake it for a piece silhouette.
+    """
+    if params is None:
         return
 
     region = canvas[y0 : y0 + cell, x0 : x0 + cell].astype(np.float32)
@@ -47,15 +74,23 @@ def _add_square_texture(canvas: np.ndarray, x0: int, y0: int, cell: int) -> None
     if h == 0 or w == 0:
         return
 
-    angle = random.uniform(0, 2 * np.pi)
-    gx, gy = np.cos(angle), np.sin(angle)
-    xs, ys = np.meshgrid(np.linspace(-1, 1, w), np.linspace(-1, 1, h))
-    gradient = xs * gx + ys * gy
-    gradient = gradient / (np.abs(gradient).max() + 1e-6)
-    region += gradient[..., None] * random.uniform(5, 25)
+    # Global (board-level) pixel coordinates so the pattern is continuous
+    # across square boundaries.
+    xs, ys = np.meshgrid(np.arange(x0, x0 + w), np.arange(y0, y0 + h))
+    gx, gy = np.cos(params["angle"]), np.sin(params["angle"])
+    proj = xs * gx + ys * gy
 
-    if random.random() < 0.7:
-        region += np.random.normal(0, random.uniform(2, 10), region.shape)
+    gradient = proj / (np.abs(proj).max() + 1e-6)
+    region += gradient[..., None] * params["gradient_amp"]
+
+    grain = np.sin(proj * params["freq"] * 2 * np.pi + params["phase"])
+    amp_mod = np.random.normal(0, 1, (h, w)).astype(np.float32)
+    amp_mod = cv2.GaussianBlur(amp_mod, (0, 0), sigmaX=max(h, w) * 0.08)
+    amp_mod = 0.4 + 0.6 * (amp_mod / (np.abs(amp_mod).max() + 1e-6))
+    region += (grain * amp_mod)[..., None] * params["grain_amp"]
+
+    if params["fine_noise_amp"] > 0.5:
+        region += np.random.normal(0, params["fine_noise_amp"], region.shape)
 
     canvas[y0 : y0 + cell, x0 : x0 + cell] = np.clip(region, 0, 255).astype(np.uint8)
 
@@ -79,6 +114,7 @@ def render_board_custom(
     dark_bgr = _hex_to_bgr(dark_hex)
 
     hl_squares = {lastmove.from_square, lastmove.to_square} if lastmove is not None else set()
+    texture_params = _make_board_texture_params(size)
 
     for row in range(8):
         for col in range(8):
@@ -95,7 +131,7 @@ def render_board_custom(
                     color = tuple(int(b * (1 - alpha) + h * alpha) for b, h in zip(base, hl_bgr))
 
             canvas[y0 : y0 + cell, x0 : x0 + cell] = color
-            _add_square_texture(canvas, x0, y0, cell)
+            _add_square_texture(canvas, x0, y0, cell, texture_params)
 
     if show_coords:
         files = "abcdefgh"
